@@ -199,7 +199,10 @@ class RoomViewController: UIViewController, ARSCNViewDelegate {
         let point = CGPoint(x: xCoord, y: yCoord)
 
         // Perform hit test for planes.
-
+        let hitTest = sceneView.hitTest(point, types: .estimatedHorizontalPlane)
+        if !hitTest.isEmpty {
+          return true
+        }
 
       }
     }
@@ -218,39 +221,61 @@ class RoomViewController: UIViewController, ARSCNViewDelegate {
     guard let planeAnchor = anchor as? ARPlaneAnchor else { return }
     
     // Draw the appropriate plane over the detected surface.
-    let planeType: String
+    drawPlaneNode(on: node, for: planeAnchor)
+    
+  /*  let planeType: String
     if planeAnchor.alignment == .horizontal {
       planeType = "horizontal"
     } else {
       planeType = "vertical"
     }
     print("Found a \(planeType) surface at " +
-            "\(planeAnchor.center.x), " +
-            "\(planeAnchor.center.y), " +
-            "\(planeAnchor.center.z)"
-    )
+      "\(planeAnchor.center.x), " +
+      "\(planeAnchor.center.y), " +
+      "\(planeAnchor.center.z)"
+    )*/
   }
 
   // This delegate method gets called whenever the node for
   // an *existing* AR anchor is updated.
   func renderer(_ renderer: SCNSceneRenderer, didUpdate node: SCNNode, for anchor: ARAnchor) {
     // Once again, we only want to deal with plane anchors.
-
+    guard let planeAnchor = anchor as? ARPlaneAnchor else { return }
+    
     // Remove any children this node may have.
-
+    node.enumerateChildNodes { (childNode, _) in
+      childNode.removeFromParentNode()
+    }
+    
     // Update the plane over this surface.
-
+    drawPlaneNode(on: node, for: planeAnchor)
   }
-  // Jäin tähän 16.5.2019 kl.14.11.
+
   func drawPlaneNode(on node: SCNNode, for planeAnchor: ARPlaneAnchor) {
     // Create a plane node with the same position and size
     // as the detected plane.
-
+    let planeNode = SCNNode(geometry: SCNPlane(
+    width: CGFloat(planeAnchor.extent.x),
+    height: CGFloat(planeAnchor.extent.z)))
+    planeNode.position = SCNVector3(planeAnchor.center.x,
+                                    planeAnchor.center.y,
+                                    planeAnchor.center.z)
+    planeNode.geometry?.firstMaterial?.isDoubleSided = true
+    
     // Align the plane with the anchor.
-
+    planeNode.eulerAngles = SCNVector3(-Double.pi / 2, 0, 0)
+    
     // Give the plane node the appropriate surface.
-
+    if planeAnchor.alignment == .horizontal {
+      planeNode.geometry?.firstMaterial?.diffuse.contents = UIImage(named: "grid")
+      planeNode.name = "horizontal"
+    } else {
+      planeNode.geometry?.firstMaterial?.diffuse.contents = UIImage(named: "ray")
+      planeNode.name = "vertical"
+    }
     // Add the plane node to the scene.
+    node.addChildNode(planeNode)
+    appState = .readyToFurnish
 
   }
 
@@ -258,9 +283,13 @@ class RoomViewController: UIViewController, ARSCNViewDelegate {
   // an existing AR anchor is removed.
   func renderer(_ renderer: SCNSceneRenderer, didRemove node: SCNNode, for anchor: ARAnchor) {
     // We only want to deal with plane anchors.
-
+    guard anchor is ARPlaneAnchor else { return }
+    
     // Remove any children this node may have.
-
+    node.enumerateChildNodes { (childNode, _) in
+      childNode.removeFromParentNode()
+    }
+    
   }
 
 
@@ -274,21 +303,37 @@ class RoomViewController: UIViewController, ARSCNViewDelegate {
 
   @objc func handleScreenTap(sender: UITapGestureRecognizer) {
     // Find out where the user tapped on the screen.
-
+    let tappedSceneView = sender.view as! ARSCNView
+    let tapLocation = sender.location(in: tappedSceneView)
+    
     // Find all the detected planes that would intersect with
     // a line extending from where the user tapped the screen.
-
+    let planeIntersections = tappedSceneView.hitTest(
+    tapLocation,
+    types: [.estimatedHorizontalPlane])
+    
     // If the closest of those planes is horizontal,
     // put the current furniture item on it.
-
+    if !planeIntersections.isEmpty {
+      addFurniture(hitTestResult: planeIntersections.first!)
+    }
+    
   }
 
   func addFurniture(hitTestResult: ARHitTestResult) {
     // Get the real-world position corresponding to
     // where the user tapped on the screen.
-
+    let transform = hitTestResult.worldTransform
+    let positionColumn = transform.columns.3
+    let initialPosition = SCNVector3(positionColumn.x,
+                                     positionColumn.y,
+                                     positionColumn.z)
+    
     // Get the current furniture item, correct its position if necessary,
     // and add it to the scene.
+    let node = furnitureSettings.currentFurniturePiece()
+    node.position = initialPosition + furnitureSettings.currentFurnitureOffset()
+    sceneView.scene.rootNode.addChildNode(node)
 
   }
 
